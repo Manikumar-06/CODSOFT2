@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DOM Practice Calculator</title>
+  <style>
+    :root{--bg:#0b1220;--panel:#0f1724;--accent:#06b6d4;--muted:#94a3b8;--danger:#ff6b6b}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(135deg,#071026,#0b1220 40%,#071026);color:#e6eef6;display:flex;align-items:center;justify-content:center;height:100vh}
+    .calc{width:360px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.06));border-radius:12px;padding:18px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    .display{background:rgba(255,255,255,0.03);padding:14px;border-radius:10px;min-height:64px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:6px}
+    .expr{font-size:14px;color:var(--muted);word-break:break-all}
+    .output{font-size:28px;font-weight:600}
+    .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+    button{padding:14px;border-radius:10px;border:0;background:rgba(255,255,255,0.03);color:inherit;font-size:16px;cursor:pointer;transition:transform .08s ease,box-shadow .08s ease}
+    button:active{transform:translateY(1px)}
+    .op{background:linear-gradient(135deg,rgba(6,182,212,0.18),rgba(124,58,237,0.12))}
+    .eq{grid-column:span 2;background:linear-gradient(90deg,var(--accent),#7c3aed);color:#06121a}
+    .ac{background:linear-gradient(90deg,#ff6b6b,#f97316)}
+    .wide{grid-column:span 2}
+    .small{font-size:14px;padding:10px}
+    .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    .history{font-size:12px;color:var(--muted)}
+    .hint{font-size:12px;color:var(--muted)}
+    footer{margin-top:12px;font-size:12px;color:var(--muted);text-align:center}
+    @media (max-width:420px){.calc{width:92vw}}
+  </style>
+</head>
+<body>
+  <div class="calc" id="calculator" role="application" aria-label="Calculator">
+    <div class="display" id="display">
+      <div class="expr" id="expr">0</div>
+      <div class="output" id="output">0</div>
+    </div>
+    <div class="keys" id="keys">
+      <button class="ac small" data-action="clear">AC</button>
+      <button data-action="back" title="Backspace">⌫</button>
+      <button data-value="%" class="op">%</button>
+      <button data-value="/" class="op">÷</button>
+      <button data-value="7">7</button>
+      <button data-value="8">8</button>
+      <button data-value="9">9</button>
+      <button data-value="*" class="op">×</button>
+      <button data-value="4">4</button>
+      <button data-value="5">5</button>
+      <button data-value="6">6</button>
+      <button data-value="-" class="op">−</button>
+      <button data-value="1">1</button>
+      <button data-value="2">2</button>
+      <button data-value="3">3</button>
+      <button data-value="+" class="op">+</button>
+      <button data-value="0" class="wide">0</button>
+      <button data-value="." >.</button>
+      <button data-action="equals" class="eq">=</button>
+    </div>
+    <footer>Built for practicing <strong>DOM manipulation</strong>, <strong>events</strong>, and <strong>expression parsing</strong>.</footer>
+  </div>
+  <script>
+  const exprEl = document.getElementById('expr');
+  const outEl = document.getElementById('output');
+  const keys = document.getElementById('keys');
+  const histEl = document.getElementById('histVal');
+  let expression = '';
+    let lastResult = null
+    function render(){
+      exprEl.textContent = expression || '0';
+      outEl.textContent = lastResult === null ? '0' : String(lastResult);
+    }
+    function tokenize(input){
+      const tokens = [];
+      const re = /\s*([0-9]*\.?[0-9]+|\+|\-|\*|\/|\(|\)|%)/g;
+      let m;
+      let idx = 0;
+      while((m = re.exec(input)) !== null){
+        if(m.index !== idx) throw new Error('Invalid token at position ' + idx);
+        tokens.push(m[1]);
+        idx = re.lastIndex;
+      }
+      if(idx !== input.replace(/\s+/g,'').length) throw new Error('Invalid characters in expression');
+      return tokens;
+    }
+    function toRPN(tokens){
+      const output = [];
+      const ops = [];
+      const precedence = { '+':1, '-':1, '*':2, '/':2, '%':2 };
+      const isLeftAssoc = (op) => ['+','-','*','/','%'].includes(op);
+      tokens.forEach(token => {
+        if(!isNaN(token)){
+          output.push(token);
+        } else if(token === '%'){
+            output.push(token);
+        } else if(['+','-','*','/'].includes(token)){
+          while(ops.length){
+            const top = ops[ops.length-1];
+            if(['+','-','*','/','%'].includes(top) && ((isLeftAssoc(token) && precedence[token] <= precedence[top]) || (!isLeftAssoc(token) && precedence[token] < precedence[top]))){
+              output.push(ops.pop());
+            } else break;
+          }
+          ops.push(token);
+        } else if(token === '('){
+          ops.push(token);
+        } else if(token === ')'){
+          while(ops.length && ops[ops.length-1] !== '(') output.push(ops.pop());
+          if(!ops.length) throw new Error('Mismatched parentheses');
+          ops.pop(); // remove '('
+        } else {
+          throw new Error('Unknown token: ' + token);
+        }
+      });
+      while(ops.length){
+        const t = ops.pop();
+        if(t === '(' || t === ')') throw new Error('Mismatched parentheses');
+        output.push(t);
+      }
+      return output;
+    }
+    function evalRPN(rpn){
+      const stack = [];
+      for(const token of rpn){
+        if(!isNaN(token)){
+          stack.push(Number(token));
+        } else if(token === '%'){
+          if(stack.length < 1) throw new Error('Percent operator missing operand');
+          const a = stack.pop();
+          stack.push(a / 100);
+        } else {
+          if(stack.length < 2) throw new Error('Operator ' + token + ' missing operands');
+          const b = stack.pop();
+          const a = stack.pop();
+          let res;
+          switch(token){
+            case '+': res = a + b; break;
+            case '-': res = a - b; break;
+            case '*': res = a * b; break;
+            case '/':
+              if(b === 0) throw new Error('Division by zero');
+              res = a / b; break;
+            default: throw new Error('Unsupported operator ' + token);
+          }
+          stack.push(res);
+        }
+      }
+      if(stack.length !== 1) throw new Error('Invalid expression');
+      return stack[0];
+    }
+    function parseAndEvaluate(input){
+      if(!input || !input.trim()) throw new Error('Empty expression');
+      input = input.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-').replace(/,/,'.');
+      const clean = input.replace(/[^0-9.+\-*/()%\s]/g,'');
+      const tokens = tokenize(clean);
+      const rpn = toRPN(tokens);
+      const value = evalRPN(rpn);
+      return value;
+    }
+    window.addEventListener('keydown', (e) => {
+      const key = e.key;
+      if((/^[0-9]$/.test(key)) || ['+','-','*','/','(',')','.','%'].includes(key)){
+        expression += key;
+        render();
+        e.preventDefault();
+      } else if(key === 'Enter' || key === '='){
+        handleEquals();
+        e.preventDefault();
+      } else if(key === 'Backspace'){
+        expression = expression.slice(0,-1);
+        render();
+        e.preventDefault();
+      } else if(key === 'Escape'){
+        handleClear();
+      }
+    });
+    keys.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if(!btn) return;
+      const val = btn.dataset.value;
+      const action = btn.dataset.action;
+      if(action === 'clear') return handleClear();
+      if(action === 'back') return handleBack();
+      if(action === 'equals') return handleEquals();
+      if(val !== undefined) {
+        expression += val;
+        render();
+      }
+    });
+    function handleClear(){ expression = ''; lastResult = null; histEl.textContent = '—'; render(); }
+    function handleBack(){ expression = expression.slice(0,-1); render(); }
+    function handleEquals(){
+      try{
+        const result = parseAndEvaluate(expression);
+        if(!isFinite(result)) throw new Error('Non-finite result');
+        lastResult = Number(Math.round((result + Number.EPSILON) * 1e12)/1e12); // round to avoid floating noise
+        histEl.textContent = expression + ' = ' + lastResult;
+        expression = String(lastResult); // allow chaining
+        render();
+      } catch(err){
+        outEl.textContent = 'Error: ' + err.message;
+      }
+    }
+    render();
+    window.calculatorAPI = {
+      getExpression: () => expression,
+      setExpression: (s) => { expression = String(s); render(); },
+      evaluate: () => { try{ return parseAndEvaluate(expression); } catch(e){ return e.message; } },
+      clear: handleClear
+    };
+    </script>
+</body>
+</html>
